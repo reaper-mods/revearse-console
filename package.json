@@ -1,7 +1,4 @@
 {
     "name": "reverse-console",
-    "version": "1.0.0",
-    "scripts": {
-        "build": "echo done"
-    }
+    "version": "1.0.0"
 }
