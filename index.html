@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>reverse-console</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000000;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #terminal {
+            width: 100%;
+            height: 100vh;
+            padding: 10px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        #input-line {
+            display: flex;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #000000;
+            border-top: 1px solid #333333;
+            padding: 8px;
+        }
+
+        .prompt {
+            color: #ff0000;
+            margin-right: 8px;
+            white-space: nowrap;
+        }
+
+        #cmd-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            outline: none;
+            caret-color: #00ff00;
+        }
+
+        .output-success {
+            color: #00ff00;
+        }
+
+        .output-error {
+            color: #ff0000;
+        }
+
+        .output-info {
+            color: #ffffff;
+        }
+
+        .command-echo {
+            color: #ffff00;
+        }
+
+        .screenshot-link {
+            color: #00ffff;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
+        #device-status {
+            position: fixed;
+            top: 0;
+            right: 0;
+            padding: 5px 10px;
+            background: #000000;
+            color: #ffffff;
+            font-size: 12px;
+            border-left: 1px solid #333333;
+            border-bottom: 1px solid #333333;
+        }
+
+        .device-online {
+            color: #00ff00;
+        }
+
+        .device-offline {
+            color: #ff0000;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #000000;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #333333;
+        }
+
+        ::selection {
+            background: #00ff00;
+            color: #000000;
+        }
+    </style>
+</head>
+<body>
+    <div id="device-status">
+        root@reverse:~# <span id="device-count" class="device-offline">0 devices</span>
+    </div>
+    
+    <div id="terminal"></div>
+    
+    <div id="input-line">
+        <span class="prompt">root@reverse:~#</span>
+        <input type="text" id="cmd-input" autofocus>
+    </div>
+
+    <script>
+        const terminal = document.getElementById('terminal');
+        const cmdInput = document.getElementById('cmd-input');
+        const deviceCount = document.getElementById('device-count');
+        
+        let lastId = 0;
+        let commandHistory = [];
+        let historyIndex = -1;
+        let currentCommand = '';
+        let screenshotData = null;
+
+        // Print initial banner
+        printOutput('Reverse Console v1.0', 'info');
+        printOutput('Type "help" for available commands\n', 'info');
+
+        // Poll server for messages
+        function pollServer() {
+            fetch('/api/command?since=' + lastId + '&client=web')
+                .then(res => res.json())
+                .then(data => {
+                    // Process messages
+                    if (data.messages && data.messages.length > 0) {
+                        data.messages.forEach(msg => {
+                            handleMessage(msg);
+                        });
+                        lastId = data.lastId || lastId;
+                        terminal.scrollTop = terminal.scrollHeight;
+                    }
+                    
+                    // Update devices
+                    if (data.devices) {
+                        updateDevices(data.devices);
+                    }
+                })
+                .catch(err => {
+                    printOutput('Connection error: ' + err.message, 'error');
+                });
+        }
+
+        function handleMessage(msg) {
+            switch(msg.type) {
+                case 'result':
+                    printOutput(msg.data, 'success');
+                    break;
+                case 'error':
+                    printOutput(msg.data, 'error');
+                    break;
+                case 'screenshot':
+                    screenshotData = msg.data;
+                    printOutput('Screenshot captured. Type "screenshot view" to display.', 'info');
+                    break;
+                case 'info':
+                    printOutput(msg.data, 'info');
+                    break;
+            }
+        }
+
+        function printOutput(text, type) {
+            const line = document.createElement('div');
+            line.className = 'output-' + (type || 'success');
+            line.textContent = text;
+            terminal.appendChild(line);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        function printCommand(cmd) {
+            const line = document.createElement('div');
+            line.className = 'command-echo';
+            line.textContent = 'root@reverse:~# ' + cmd;
+            terminal.appendChild(line);
+        }
+
+        function updateDevices(devices) {
+            const count = devices.length;
+            deviceCount.textContent = count + ' device' + (count !== 1 ? 's' : '');
+            deviceCount.className = count > 0 ? 'device-online' : 'device-offline';
+        }
+
+        function sendCommand(cmd) {
+            printCommand(cmd);
+            
+            fetch('/api/command', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    action: 'command',
+                    data: cmd
+                })
+            }).catch(err => {
+                printOutput('Failed to send command: ' + err.message, 'error');
+            });
+        }
+
+        function executeCommand(cmd) {
+            if (!cmd || cmd.trim() === '') return;
+            
+            cmd = cmd.trim();
+            
+            // Add to history
+            commandHistory.push(cmd);
+            historyIndex = commandHistory.length;
+            
+            // Built-in commands
+            const parts = cmd.split(' ');
+            const mainCmd = parts[0].toLowerCase();
+            
+            if (mainCmd === 'help') {
+                printOutput('Available commands:', 'info');
+                printOutput('  help              - Show this help', 'info');
+                printOutput('  clear             - Clear terminal', 'info');
+                printOutput('  screenshot        - Take screenshot', 'info');
+                printOutput('  screenshot view   - View last screenshot', 'info');
+                printOutput('  devices           - List connected devices', 'info');
+                printOutput('  <shell command>   - Execute on device', 'info');
+                printOutput('', 'info');
+                printOutput('Examples:', 'info');
+                printOutput('  ls /sdcard', 'info');
+                printOutput('  whoami', 'info');
+                printOutput('  uname -a', 'info');
+                printOutput('  pm list packages', 'info');
+                return;
+            }
+            
+            if (mainCmd === 'clear') {
+                terminal.innerHTML = '';
+                return;
+            }
+            
+            if (mainCmd === 'screenshot') {
+                if (parts[1] === 'view' && screenshotData) {
+                    printOutput('Opening screenshot...', 'info');
+                    const win = window.open();
+                    win.document.write('<img src="data:image/jpeg;base64,' + screenshotData + '" style="max-width:100%;">');
+                } else {
+                    printOutput('Taking screenshot...', 'info');
+                    sendCommand('screenshot');
+                }
+                return;
+            }
+            
+            if (mainCmd === 'devices') {
+                fetch('/api/command?client=web')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.devices && data.devices.length > 0) {
+                            printOutput('Connected devices:', 'info');
+                            data.devices.forEach(d => {
+                                printOutput('  ' + d.info + ' (ID: ' + d.id + ')', 'success');
+                            });
+                        } else {
+                            printOutput('No devices connected', 'error');
+                        }
+                    });
+                return;
+            }
+            
+            // Send to device
+            sendCommand(cmd);
+        }
+
+        // Input handling
+        cmdInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const cmd = this.value;
+                executeCommand(cmd);
+                this.value = '';
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (historyIndex > 0) {
+                    historyIndex--;
+                    this.value = commandHistory[historyIndex] || '';
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (historyIndex < commandHistory.length - 1) {
+                    historyIndex++;
+                    this.value = commandHistory[historyIndex] || '';
+                } else {
+                    historyIndex = commandHistory.length;
+                    this.value = '';
+                }
+            }
+        });
+
+        // Keep focus on input
+        document.addEventListener('click', function() {
+            cmdInput.focus();
+        });
+
+        // Start polling
+        setInterval(pollServer, 1000);
+        pollServer();
+        
+        // Focus input
+        cmdInput.focus();
+    </script>
+</body>
+</html>
