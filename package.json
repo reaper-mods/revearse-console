@@ -1,0 +1,12 @@
+{
+  "name": "android-remote-shell",
+  "version": "1.0.0",
+  "description": "Remote shell for Android devices",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.14.2"
+  }
+}
