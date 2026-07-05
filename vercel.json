@@ -1,5 +1,13 @@
 {
-    "name": "reverse-console",
-    "version": "1.0.0",
-    "main": "api/index.js"
+    "version": 2,
+    "routes": [
+        {
+            "src": "/api/(.*)",
+            "dest": "/api/$1"
+        },
+        {
+            "src": "/(.*)",
+            "dest": "/index"
+        }
+    ]
 }
